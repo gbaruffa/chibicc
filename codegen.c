@@ -1293,7 +1293,10 @@ static void gen_stmt(Node *node) {
       }
     }
 
-    println("  jmp .L.return.%s", current_fn->name);
+    if (!strcmp(current_fn->name, "principale"))
+      println("  jmp .L.return.main");
+    else
+      println("  jmp .L.return.%s", current_fn->name);
     return;
   case ND_EXPR_STMT:
     gen_expr(node->lhs);
@@ -1477,14 +1480,26 @@ static void emit_text(Obj *prog) {
     if (!fn->is_live)
       continue;
 
-    if (fn->is_static)
-      println("  .local %s", fn->name);
-    else
-      println("  .globl %s", fn->name);
+    if (fn->is_static) {
+      if (!strcmp(fn->name, "principale"))
+        println("  .local %s", "main");
+      else
+        println("  .local %s", fn->name);
+    } else {
+      if (!strcmp(fn->name, "principale"))
+        println("  .globl %s", "main");
+      else
+        println("  .globl %s", fn->name);
+    }
 
     println("  .text");
-    println("  .type %s, @function", fn->name);
-    println("%s:", fn->name);
+    if (!strcmp(fn->name, "principale")) {
+      println("  .type %s, @function", "main");
+      println("%s:", "main"); 
+    } else {
+      println("  .type %s, @function", fn->name);
+      println("%s:", fn->name);
+    }
     current_fn = fn;
 
     // Prologue
@@ -1571,11 +1586,14 @@ static void emit_text(Obj *prog) {
     // a special rule for the main function. Reaching the end of the
     // main function is equivalent to returning 0, even though the
     // behavior is undefined for the other functions.
-    if (strcmp(fn->name, "main") == 0)
+    if (strcmp(fn->name, "principale") == 0)
       println("  mov $0, %%rax");
 
     // Epilogue
-    println(".L.return.%s:", fn->name);
+    if (!strcmp(fn->name, "principale"))
+      println(".L.return.%s:", "main");
+    else
+      println(".L.return.%s:", fn->name);
     println("  mov %%rbp, %%rsp");
     println("  pop %%rbp");
     println("  ret");

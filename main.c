@@ -674,6 +674,10 @@ static void run_linker(StringArray *inputs, char *output) {
     strarray_push(&arr, format("%s/crtend.o", gcc_libpath));
 
   strarray_push(&arr, format("%s/crtn.o", libpath));
+
+  /* strarray_push(&arr, "-e");
+  strarray_push(&arr, "principale"); */
+
   strarray_push(&arr, NULL);
 
   run_subprocess(arr.data);

@@ -771,7 +771,7 @@ static char *detect_include_guard(Token *tok) {
   char *macro = strndup(tok->loc, tok->len);
   tok = tok->next;
 
-  if (!is_hash(tok) || !equal(tok->next, "define") || !equal(tok->next->next, macro))
+  if (!is_hash(tok) || !equal(tok->next, "define") || !equal(tok->next, "definisci") || !equal(tok->next->next, macro))
     return NULL;
 
   // Read until the end of the file.
@@ -874,6 +874,23 @@ static Token *preprocess2(Token *tok) {
       continue;
     }
 
+    if (equal(tok, "includi")) {
+      bool is_dquote;
+      char *filename = read_include_filename(&tok, tok->next, &is_dquote);
+
+      if (filename[0] != '/' && is_dquote) {
+        char *path = format("%s/%s", dirname(strdup(start->file->name)), filename);
+        if (file_exists(path)) {
+          tok = include_file(tok, path, start->next->next);
+          continue;
+        }
+      }
+
+      char *path = search_include_paths(filename);
+      tok = include_file(tok, path ? path : filename, start->next->next);
+      continue;
+    }
+
     if (equal(tok, "include_next")) {
       bool ignore;
       char *filename = read_include_filename(&tok, tok->next, &ignore);
@@ -883,6 +900,11 @@ static Token *preprocess2(Token *tok) {
     }
 
     if (equal(tok, "define")) {
+      read_macro_definition(&tok, tok->next);
+      continue;
+    }
+
+    if (equal(tok, "definisci")) {
       read_macro_definition(&tok, tok->next);
       continue;
     }

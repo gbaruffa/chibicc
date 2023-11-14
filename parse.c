@@ -488,19 +488,31 @@ static Type *declspec(Token **rest, Token *tok, VarAttr *attr) {
       counter += BOOL;
     else if (equal(tok, "char"))
       counter += CHAR;
+    else if (equal(tok, "car"))
+      counter += CHAR;
     else if (equal(tok, "short"))
       counter += SHORT;
     else if (equal(tok, "int"))
       counter += INT;
     else if (equal(tok, "long"))
       counter += LONG;
+    else if (equal(tok, "lungo"))
+      counter += LONG;
     else if (equal(tok, "float"))
+      counter += FLOAT;
+    else if (equal(tok, "mobile"))
       counter += FLOAT;
     else if (equal(tok, "double"))
       counter += DOUBLE;
+    else if (equal(tok, "doppia"))
+      counter += DOUBLE;
     else if (equal(tok, "signed"))
       counter |= SIGNED;
+    else if (equal(tok, "segnato"))
+      counter |= SIGNED;
     else if (equal(tok, "unsigned"))
+      counter |= UNSIGNED;
+    else if (equal(tok, "nonsegnato"))
       counter |= UNSIGNED;
     else
       unreachable();
@@ -1499,10 +1511,10 @@ static bool is_typename(Token *tok) {
 
   if (map.capacity == 0) {
     static char *kw[] = {
-      "void", "_Bool", "char", "short", "int", "long", "struct", "union",
-      "typedef", "enum", "static", "extern", "_Alignas", "signed", "unsigned",
+      "void", "_Bool", "char", "car", "short", "int", "long", "lungo", "struct", "union",
+      "typedef", "enum", "static", "extern", "_Alignas", "signed", "segnato", "unsigned", "nonsegnato",
       "const", "volatile", "auto", "register", "restrict", "__restrict",
-      "__restrict__", "_Noreturn", "float", "double", "typeof", "inline",
+      "__restrict__", "_Noreturn", "float", "mobile", "double", "doppia", "typeof", "inline",
       "_Thread_local", "__thread", "_Atomic",
     };
 
@@ -1560,6 +1572,23 @@ static Node *stmt(Token **rest, Token *tok) {
 
     node->lhs = exp;
     return node;
+  }  
+  
+  if (equal(tok, "ridai")) {
+    Node *node = new_node(ND_RETURN, tok);
+    if (consume(rest, tok->next, ";"))
+      return node;
+
+    Node *exp = expr(&tok, tok->next);
+    *rest = skip(tok, ";");
+
+    add_type(exp);
+    Type *ty = current_fn->ty->return_ty;
+    if (ty->kind != TY_STRUCT && ty->kind != TY_UNION)
+      exp = new_cast(exp, current_fn->ty->return_ty);
+
+    node->lhs = exp;
+    return node;
   }
 
   if (equal(tok, "if")) {
@@ -1574,7 +1603,38 @@ static Node *stmt(Token **rest, Token *tok) {
     return node;
   }
 
+  if (equal(tok, "se")) {
+    Node *node = new_node(ND_IF, tok);
+    tok = skip(tok->next, "(");
+    node->cond = expr(&tok, tok);
+    tok = skip(tok, ")");
+    node->then = stmt(&tok, tok);
+    if (equal(tok, "altrimenti"))
+      node->els = stmt(&tok, tok->next);
+    *rest = tok;
+    return node;
+  }
+
   if (equal(tok, "switch")) {
+    Node *node = new_node(ND_SWITCH, tok);
+    tok = skip(tok->next, "(");
+    node->cond = expr(&tok, tok);
+    tok = skip(tok, ")");
+
+    Node *sw = current_switch;
+    current_switch = node;
+
+    char *brk = brk_label;
+    brk_label = node->brk_label = new_unique_name();
+
+    node->then = stmt(rest, tok);
+
+    current_switch = sw;
+    brk_label = brk;
+    return node;
+  }
+
+  if (equal(tok, "commuta")) {
     Node *node = new_node(ND_SWITCH, tok);
     tok = skip(tok->next, "(");
     node->cond = expr(&tok, tok);
@@ -1620,6 +1680,33 @@ static Node *stmt(Token **rest, Token *tok) {
     return node;
   }
 
+  if (equal(tok, "caso")) {
+    if (!current_switch)
+      error_tok(tok, "stray case");
+
+    Node *node = new_node(ND_CASE, tok);
+    int begin = const_expr(&tok, tok->next);
+    int end;
+
+    if (equal(tok, "...")) {
+      // [GNU] Case ranges, e.g. "case 1 ... 5:"
+      end = const_expr(&tok, tok->next);
+      if (end < begin)
+        error_tok(tok, "empty case range specified");
+    } else {
+      end = begin;
+    }
+
+    tok = skip(tok, ":");
+    node->label = new_unique_name();
+    node->lhs = stmt(rest, tok);
+    node->begin = begin;
+    node->end = end;
+    node->case_next = current_switch->case_next;
+    current_switch->case_next = node;
+    return node;
+  }
+
   if (equal(tok, "default")) {
     if (!current_switch)
       error_tok(tok, "stray default");
@@ -1632,7 +1719,53 @@ static Node *stmt(Token **rest, Token *tok) {
     return node;
   }
 
+  if (equal(tok, "preimposta")) {
+    if (!current_switch)
+      error_tok(tok, "stray default");
+
+    Node *node = new_node(ND_CASE, tok);
+    tok = skip(tok->next, ":");
+    node->label = new_unique_name();
+    node->lhs = stmt(rest, tok);
+    current_switch->default_case = node;
+    return node;
+  }
+
   if (equal(tok, "for")) {
+    Node *node = new_node(ND_FOR, tok);
+    tok = skip(tok->next, "(");
+
+    enter_scope();
+
+    char *brk = brk_label;
+    char *cont = cont_label;
+    brk_label = node->brk_label = new_unique_name();
+    cont_label = node->cont_label = new_unique_name();
+
+    if (is_typename(tok)) {
+      Type *basety = declspec(&tok, tok, NULL);
+      node->init = declaration(&tok, tok, basety, NULL);
+    } else {
+      node->init = expr_stmt(&tok, tok);
+    }
+
+    if (!equal(tok, ";"))
+      node->cond = expr(&tok, tok);
+    tok = skip(tok, ";");
+
+    if (!equal(tok, ")"))
+      node->inc = expr(&tok, tok);
+    tok = skip(tok, ")");
+
+    node->then = stmt(rest, tok);
+
+    leave_scope();
+    brk_label = brk;
+    cont_label = cont;
+    return node;
+  }
+
+  if (equal(tok, "per")) {
     Node *node = new_node(ND_FOR, tok);
     tok = skip(tok->next, "(");
 
@@ -1684,6 +1817,24 @@ static Node *stmt(Token **rest, Token *tok) {
     return node;
   }
 
+  if (equal(tok, "mentre")) {
+    Node *node = new_node(ND_FOR, tok);
+    tok = skip(tok->next, "(");
+    node->cond = expr(&tok, tok);
+    tok = skip(tok, ")");
+
+    char *brk = brk_label;
+    char *cont = cont_label;
+    brk_label = node->brk_label = new_unique_name();
+    cont_label = node->cont_label = new_unique_name();
+
+    node->then = stmt(rest, tok);
+
+    brk_label = brk;
+    cont_label = cont;
+    return node;
+  }
+
   if (equal(tok, "do")) {
     Node *node = new_node(ND_DO, tok);
 
@@ -1698,6 +1849,27 @@ static Node *stmt(Token **rest, Token *tok) {
     cont_label = cont;
 
     tok = skip(tok, "while");
+    tok = skip(tok, "(");
+    node->cond = expr(&tok, tok);
+    tok = skip(tok, ")");
+    *rest = skip(tok, ";");
+    return node;
+  }
+
+  if (equal(tok, "fa")) {
+    Node *node = new_node(ND_DO, tok);
+
+    char *brk = brk_label;
+    char *cont = cont_label;
+    brk_label = node->brk_label = new_unique_name();
+    cont_label = node->cont_label = new_unique_name();
+
+    node->then = stmt(&tok, tok->next);
+
+    brk_label = brk;
+    cont_label = cont;
+
+    tok = skip(tok, "mentre");
     tok = skip(tok, "(");
     node->cond = expr(&tok, tok);
     tok = skip(tok, ")");
@@ -1725,6 +1897,23 @@ static Node *stmt(Token **rest, Token *tok) {
     return node;
   }
 
+  if (equal(tok, "vaia")) {
+    if (equal(tok->next, "*")) {
+      // [GNU] `goto *ptr` jumps to the address specified by `ptr`.
+      Node *node = new_node(ND_GOTO_EXPR, tok);
+      node->lhs = expr(&tok, tok->next->next);
+      *rest = skip(tok, ";");
+      return node;
+    }
+
+    Node *node = new_node(ND_GOTO, tok);
+    node->label = get_ident(tok->next);
+    node->goto_next = gotos;
+    gotos = node;
+    *rest = skip(tok->next->next, ";");
+    return node;
+  }
+
   if (equal(tok, "break")) {
     if (!brk_label)
       error_tok(tok, "stray break");
@@ -1734,7 +1923,25 @@ static Node *stmt(Token **rest, Token *tok) {
     return node;
   }
 
+  if (equal(tok, "rompi")) {
+    if (!brk_label)
+      error_tok(tok, "stray break");
+    Node *node = new_node(ND_GOTO, tok);
+    node->unique_label = brk_label;
+    *rest = skip(tok->next, ";");
+    return node;
+  }
+
   if (equal(tok, "continue")) {
+    if (!cont_label)
+      error_tok(tok, "stray continue");
+    Node *node = new_node(ND_GOTO, tok);
+    node->unique_label = cont_label;
+    *rest = skip(tok->next, ";");
+    return node;
+  }
+
+  if (equal(tok, "continua")) {
     if (!cont_label)
       error_tok(tok, "stray continue");
     Node *node = new_node(ND_GOTO, tok);

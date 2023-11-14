@@ -375,7 +375,7 @@ static bool convert_pp_int(Token *tok) {
   } else if (*p == 'L' || *p == 'l') {
     p++;
     l = true;
-  } else if (*p == 'U' || *p == 'u') {
+  } else if (*p == 'U' || *p == 'u' || *p == 'N' || *p == 'n') {
     p++;
     u = true;
   }
